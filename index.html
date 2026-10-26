@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LearnTube</title>
+<style>
+:root{--bg:#f2f5f1;--card:#fff;--text:#16241f;--muted:#5b6b64;--line:#d9e1db;--accent:#1f5c4a;--accent-text:#fff;--hi:#f2d14b}
+@media (prefers-color-scheme:dark){:root{--bg:#101c18;--card:#192823;--text:#eaf0ea;--muted:#9bb0a6;--line:#2b3d36;--accent:#f2d14b;--accent-text:#16241f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:24px 18px 60px}
+h1{font:700 30px Palatino,"Iowan Old Style",Georgia,serif;margin:0 0 4px}
+h2{font:700 22px Palatino,Georgia,serif;margin:22px 0 12px}
+.sub{color:var(--muted);margin:0 0 18px}
+.btn{border:0;background:var(--accent);color:var(--accent-text);padding:10px 16px;border-radius:8px;font:600 14px system-ui;cursor:pointer}
+.btn.ghost{background:none;color:var(--text);border:1px solid var(--line)}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--text);padding:6px 13px;border-radius:99px;font-size:13px;cursor:pointer}
+.chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+input[type=search]{width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-size:15px;margin-bottom:14px}
+.box{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--hi);border-radius:6px;padding:14px 16px;margin-bottom:16px;font-size:14px}
+.box ol{margin:8px 0 12px;padding-left:20px}
+.box a{color:var(--accent)}
+@media (prefers-color-scheme:dark){.box a{color:var(--hi)}}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;gap:12px;align-items:center;text-align:left;color:var(--text);font:inherit;width:100%;cursor:pointer;text-decoration:none}
+.card:hover{border-color:var(--accent)}
+.card:focus-visible,.chip:focus-visible,.btn:focus-visible{outline:3px solid var(--hi);outline-offset:2px}
+.av{width:44px;height:44px;border-radius:50%;background:var(--line);flex:none;display:grid;place-items:center;font-weight:700}
+.nm{font-weight:700;line-height:1.2}.ct{font-size:12px;color:var(--muted)}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;place-items:center;padding:16px;z-index:9}
+#modal.on{display:grid}
+.player{width:min(960px,100%)}
+.player .ratio{position:relative;aspect-ratio:16/9;background:#000}
+.player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.player .btn{margin-bottom:8px;background:var(--card);color:var(--text)}
+.err{border-left-color:#b3261e}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>LearnTube</h1>
+  <p class="sub">YouTube channels for learning only. Find the ones you already subscribe to, and watch right here.</p>
+  <div id="app"></div>
+</div>
+<div id="modal"><div class="player"><button class="btn" id="close">Close video</button><div class="ratio"><iframe id="frame" allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Video player"></iframe></div></div></div>
+
+<script>
+// Curated learning channels: [name, handle, category]. Add or remove freely.
+const C=[
+["Khan Academy","khanacademy","General"],["Crash Course","crashcourse","General"],["TED-Ed","TEDEd","General"],["MIT OpenCourseWare","mitocw","General"],
+["Kurzgesagt","kurzgesagt","Science"],["Veritasium","veritasium","Science"],["SciShow","SciShow","Science"],["PBS Space Time","pbsspacetime","Science"],["minutephysics","minutephysics","Science"],["Professor Dave Explains","ProfessorDaveExplains","Science"],
+["The Organic Chemistry Tutor","TheOrganicChemistryTutor","Math"],["3Blue1Brown","3blue1brown","Math"],["Numberphile","numberphile","Math"],["Mathologer","Mathologer","Math"],["Professor Leonard","professorleonard","Math"],
+["CS50","cs50","Programming"],["freeCodeCamp.org","freecodecamp","Programming"],["Fireship","fireship","Programming"],["Traversy Media","TraversyMedia","Programming"],["Corey Schafer","coreyms","Programming"],["Computerphile","Computerphile","Programming"],["Ben Eater","BenEater","Programming"],
+["Practical Engineering","PracticalEngineering","Engineering"],["Real Engineering","RealEngineering","Engineering"],
+["Economics Explained","EconomicsExplained","Business"],["Wendover Productions","Wendoverproductions","Business"],
+["Thomas Frank Explains","ThomasFrankExplains","Study Skills"],["Ali Abdaal","aliabdaal","Study Skills"],
+["Proko","ProkoTV","Arts & Music"],["Adam Neely","AdamNeely","Arts & Music"],["Rick Beato","RickBeato","Arts & Music"],
+["English with Lucy","EnglishwithLucy","Languages"]
+];
+const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
+const esc=s=>String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+const $=id=>document.getElementById(id);
+const cats=["All",...new Set(C.map(c=>c[2]))];
+const KEY="learntube-mine";
+let mine=[],view="all",cat="All",q="",msg="",bad=false;
+try{mine=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){}
+if(mine.length)view="mine";
+
+function parseCSV(t){
+  const rows=[];let r=[],f="",inq=false;
+  for(let i=0;i<t.length;i++){
+    const c=t[i];
+    if(inq){if(c=='"'){if(t[i+1]=='"'){f+='"';i++}else inq=false}else f+=c}
+    else if(c=='"')inq=true;
+    else if(c==","){r.push(f);f=""}
+    else if(c=="\n"||c=="\r"){if(c=="\r"&&t[i+1]=="\n")i++;r.push(f);f="";if(r.length>1||r[0])rows.push(r);r=[]}
+    else f+=c;
+  }
+  if(f||r.length){r.push(f);rows.push(r)}
+  return rows;
+}
+function importCSV(text){
+  const rows=parseCSV(text.replace(/^\uFEFF/,""));
+  const head=(rows.shift()||[]).map(h=>h.trim().toLowerCase());
+  const iId=head.findIndex(h=>h.includes("channel id")),iT=head.findIndex(h=>h.includes("title"));
+  if(iId<0||iT<0){bad=true;msg="That doesn't look like subscriptions.csv from Google Takeout. It needs the columns Channel ID and Channel title.";return}
+  const names=new Map(C.map(c=>[norm(c[0]),c]));
+  const out=[];
+  rows.forEach(r=>{const c=names.get(norm(r[iT]||""));if(c&&r[iId])out.push({name:c[0],id:r[iId].trim(),cat:c[2]})});
+  mine=out;bad=false;view="mine";
+  msg=`Checked ${rows.length} subscriptions and found ${out.length} on the learning list.`;
+  try{localStorage.setItem(KEY,JSON.stringify(mine))}catch(e){}
+}
+function clearMine(){mine=[];view="all";msg="";try{localStorage.removeItem(KEY)}catch(e){}}
+
+function card(c,own){
+  const av=`<div class="av">${esc(c.name[0])}</div>`;
+  if(own)return `<button class="card" data-play="${esc(c.id)}">${av}<div><div class="nm">${esc(c.name)}</div><div class="ct">${esc(c.cat)} · watch here</div></div></button>`;
+  return `<a class="card" href="https://www.youtube.com/@${c.handle}" target="_blank" rel="noopener noreferrer">${av}<div><div class="nm">${esc(c.name)}</div><div class="ct">${esc(c.cat)} · opens YouTube</div></div></a>`;
+}
+
+function render(){
+  let h="";
+  if(msg)h+=`<div class="box ${bad?"err":""}">${esc(msg)}</div>`;
+  h+=`<div class="tabs"><button class="chip" data-v="mine" aria-pressed="${view==="mine"}">My subscriptions${mine.length?" ("+mine.length+")":""}</button><button class="chip" data-v="all" aria-pressed="${view==="all"}">Browse all channels</button></div>`;
+  if(view==="mine"){
+    if(mine.length){
+      h+=`<div class="grid">${mine.map(m=>card(m,true)).join("")}</div>`;
+      h+=`<div class="row" style="margin-top:18px"><label class="btn ghost">Upload a new file<input type="file" id="file" accept=".csv,text/csv" hidden></label><button class="btn ghost" id="clear">Clear my data</button></div>`;
+    }else{
+      h+=`<div class="box"><b>See the learning channels you already subscribe to</b>
+<ol><li>Open <a href="https://takeout.google.com/settings/takeout/custom/youtube" target="_blank" rel="noopener">Google Takeout</a> and sign in.</li>
+<li>Click "All YouTube data included", choose only <b>subscriptions</b>, then create the export.</li>
+<li>Download and unzip it, then find <b>subscriptions.csv</b>.</li>
+<li>Upload that file here.</li></ol>
+<label class="btn">Choose subscriptions.csv<input type="file" id="file" accept=".csv,text/csv" hidden></label>
+<p style="margin:12px 0 0;color:var(--muted)">The file is read inside your browser and never uploaded anywhere. Only the learning channels are kept, on this device.</p></div>`;
+    }
+  }else{
+    h+=`<input type="search" id="q" placeholder="Search channels…" value="${esc(q)}"><div class="tabs">${cats.map(c=>`<button class="chip" data-c="${esc(c)}" aria-pressed="${c===cat}">${esc(c)}</button>`).join("")}</div>`;
+    const list=C.filter(c=>(cat==="All"||c[2]===cat)&&(!q||(c[0]+c[2]).toLowerCase().includes(q.toLowerCase())));
+    h+=`<div class="grid">${list.map(c=>card({name:c[0],handle:c[1],cat:c[2]},false)).join("")}</div>`;
+  }
+  $("app").innerHTML=h;
+  $("app").querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{view=b.dataset.v;msg="";render()});
+  $("app").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{cat=b.dataset.c;render()});
+  $("app").querySelectorAll("[data-play]").forEach(b=>b.onclick=()=>play(b.dataset.play));
+  const f=$("file");if(f)f.onchange=async e=>{const file=e.target.files[0];if(file){importCSV(await file.text());render()}};
+  const cl=$("clear");if(cl)cl.onclick=()=>{clearMine();render()};
+  const s=$("q");if(s)s.oninput=e=>{q=e.target.value;const p=e.target.selectionStart;render();const n=$("q");n.focus();n.setSelectionRange(p,p)};
+}
+function play(channelId){
+  if(!/^UC[\w-]{22}$/.test(channelId)){msg="This channel ID looks invalid. Try uploading your file again.";bad=true;render();return}
+  $("frame").src="https://www.youtube.com/embed?listType=playlist&list=UU"+channelId.slice(2)+"&autoplay=1&rel=0";
+  $("modal").classList.add("on");
+}
+function stop(){$("frame").src="";$("modal").classList.remove("on")}
+$("close").onclick=stop;
+$("modal").onclick=e=>{if(e.target.id==="modal")stop()};
+document.addEventListener("keydown",e=>{if(e.key==="Escape")stop()});
+render();
+</script>
+</body>
+</html>
